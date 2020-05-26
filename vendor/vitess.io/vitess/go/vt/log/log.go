@@ -6,7 +6,6 @@
 package log
 
 import (
-	"flag"
 	"github.com/golang/glog"
 )
 
@@ -57,5 +56,5 @@ var (
 )
 
 func init() {
-	flag.Uint64Var(&glog.MaxSize, "log_rotate_max_size", glog.MaxSize, "size in bytes at which logs are rotated (glog.MaxSize)")
+	// flag.Uint64Var(&glog.MaxSize, "log_rotate_max_size", glog.MaxSize, "size in bytes at which logs are rotated (glog.MaxSize)")
 }
