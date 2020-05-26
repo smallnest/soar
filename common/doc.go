@@ -16,3 +16,12 @@
 
 // Package common contain many useful functions for logging, formatting and so on.
 package common
+
+import (
+	"flag"
+	"os"
+)
+
+func init() {
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+}
