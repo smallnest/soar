@@ -18,16 +18,12 @@ package common
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"time"
 
@@ -452,74 +448,6 @@ func SoarVersion() {
 	fmt.Println("GitDirty:", GitDirty)
 }
 
-// 因为vitess sqlparser 使用了 glog 中也会使用 flag，为了不让用户困扰我们单独写一个 usage
-func usage() {
-	regPwd := regexp.MustCompile(`:.*@`)
-	vitessHelp := []string{
-		"-alsologtostderr",
-		"log to standard error as well as files",
-		"-log_backtrace_at value",
-		"when logging hits line file:N, emit a stack trace",
-		"-log_dir string",
-		"If non-empty, write log files in this directory",
-		"-logtostderr",
-		"log to standard error instead of files",
-		"-sql-max-length-errors int",
-		"truncate queries in error logs to the given length (default unlimited)",
-		"-sql-max-length-ui int",
-		"truncate queries in debug UIs to the given length (default 512) (default 512)",
-		"-stderrthreshold value",
-		"logs at or above this threshold go to stderr",
-		"-v value",
-		"log level for V logs",
-		"-vmodule value",
-		"comma-separated list of pattern=N settings for file-filtered logging",
-	}
-
-	// io redirect
-	restoreStdout := os.Stdout
-	restoreStderr := os.Stderr
-	stdin, stdout, _ := os.Pipe()
-	os.Stderr = stdout
-	os.Stdout = stdout
-
-	flag.PrintDefaults()
-
-	// copy the output in a separate goroutine so printing can't block indefinitely
-	outC := make(chan string)
-	go func() {
-		var buf bytes.Buffer
-		_, err := io.Copy(&buf, stdin)
-		if err != nil {
-			fmt.Println(err.Error())
-		}
-		outC <- buf.String()
-	}()
-
-	// back to normal state
-	stdout.Close()
-	os.Stdout = restoreStdout // restoring the real stderr
-	os.Stderr = restoreStderr
-
-	fmt.Printf("Usage of %s:\n", os.Args[0])
-	// reading our temp stdout
-	out := <-outC
-	for _, line := range strings.Split(out, "\n") {
-		found := false
-		for _, ignore := range vitessHelp {
-			if strings.TrimSpace(line) == strings.TrimSpace(ignore) {
-				found = true
-			}
-			if regPwd.MatchString(line) && !Config.Verbose {
-				line = regPwd.ReplaceAllString(line, ":********@")
-			}
-		}
-		if !found {
-			fmt.Println(line)
-		}
-	}
-}
-
 // PrintConfiguration for `-print-config` flag
 func PrintConfiguration() {
 	// 打印配置的时候密码不显示
@@ -554,206 +482,6 @@ func (conf *Configuration) readConfigFile(path string) error {
 	return nil
 }
 
-// 从命令行参数读配置
-func readCmdFlags() error {
-	if hasParsed {
-		Log.Debug("Skip read cmd flags.")
-		return nil
-	}
-
-	_ = flag.String("config", "", "Config file path")
-	// +++++++++++++++测试环境+++++++++++++++++
-	onlineDSN := flag.String("online-dsn", FormatDSN(Config.OnlineDSN), "OnlineDSN, 线上环境数据库配置, username:password@tcp(ip:port)/schema")
-	testDSN := flag.String("test-dsn", FormatDSN(Config.TestDSN), "TestDSN, 测试环境数据库配置, username:password@tcp(ip:port)/schema")
-	allowOnlineAsTest := flag.Bool("allow-online-as-test", Config.AllowOnlineAsTest, "AllowOnlineAsTest, 允许线上环境也可以当作测试环境")
-	dropTestTemporary := flag.Bool("drop-test-temporary", Config.DropTestTemporary, "DropTestTemporary, 是否清理测试环境产生的临时库表")
-	cleanupTestDatabase := flag.Bool("cleanup-test-database", Config.CleanupTestDatabase, "单次运行清理历史1小时前残余的测试库。")
-	onlySyntaxCheck := flag.Bool("only-syntax-check", Config.OnlySyntaxCheck, "OnlySyntaxCheck, 只做语法检查不输出优化建议")
-	profiling := flag.Bool("profiling", Config.Profiling, "Profiling, 开启数据采样的情况下在测试环境执行Profile")
-	trace := flag.Bool("trace", Config.Trace, "Trace, 开启数据采样的情况下在测试环境执行Trace")
-	explain := flag.Bool("explain", Config.Explain, "Explain, 是否开启Explain执行计划分析")
-	sampling := flag.Bool("sampling", Config.Sampling, "Sampling, 数据采样开关")
-	samplingStatisticTarget := flag.Int("sampling-statistic-target", Config.SamplingStatisticTarget, "SamplingStatisticTarget, 数据采样因子，对应 PostgreSQL 的 default_statistics_target")
-	samplingCondition := flag.String("sampling-condition", Config.SamplingCondition, "SamplingCondition, 数据采样条件，如： WHERE xxx LIMIT xxx")
-	delimiter := flag.String("delimiter", Config.Delimiter, "Delimiter, SQL分隔符")
-	minCardinality := flag.Float64("min-cardinality", Config.MinCardinality, "MinCardinality，索引列散粒度最低阈值，散粒度低于该值的列不添加索引，建议范围0.0 ~ 100.0")
-	// +++++++++++++++日志相关+++++++++++++++++
-	logLevel := flag.Int("log-level", Config.LogLevel, "LogLevel, 日志级别, [0:Emergency, 1:Alert, 2:Critical, 3:Error, 4:Warning, 5:Notice, 6:Informational, 7:Debug]")
-	logOutput := flag.String("log-output", Config.LogOutput, "LogOutput, 日志输出位置")
-	reportType := flag.String("report-type", Config.ReportType, "ReportType, 优化建议输出格式，目前支持: json, text, markdown, html等")
-	reportCSS := flag.String("report-css", Config.ReportCSS, "ReportCSS, 当 ReportType 为 html 格式时使用的 css 风格，如不指定会提供一个默认风格。CSS可以是本地文件，也可以是一个URL")
-	reportJavascript := flag.String("report-javascript", Config.ReportJavascript, "ReportJavascript, 当 ReportType 为 html 格式时使用的javascript脚本，如不指定默认会加载SQL pretty 使用的 javascript。像CSS一样可以是本地文件，也可以是一个URL")
-	reportTitle := flag.String("report-title", Config.ReportTitle, "ReportTitle, 当 ReportType 为 html 格式时，HTML 的 title")
-	// +++++++++++++++markdown+++++++++++++++++
-	markdownExtensions := flag.Int("markdown-extensions", Config.MarkdownExtensions, "MarkdownExtensions, markdown 转 html支持的扩展包, 参考blackfriday")
-	markdownHTMLFlags := flag.Int("markdown-html-flags", Config.MarkdownHTMLFlags, "MarkdownHTMLFlags, markdown 转 html 支持的 flag, 参考blackfriday")
-	// ++++++++++++++优化建议相关++++++++++++++
-	ignoreRules := flag.String("ignore-rules", strings.Join(Config.IgnoreRules, ","), "IgnoreRules, 忽略的优化建议规则")
-	rewriteRules := flag.String("rewrite-rules", strings.Join(Config.RewriteRules, ","), "RewriteRules, 生效的重写规则")
-	blackList := flag.String("blacklist", Config.BlackList, "指定 blacklist 配置文件的位置，文件中的 SQL 不会被评审。一行一条SQL，可以是指纹，也可以是正则")
-	maxJoinTableCount := flag.Int("max-join-table-count", Config.MaxJoinTableCount, "MaxJoinTableCount, 单条 SQL 中 JOIN 表的最大数量")
-	maxGroupByColsCount := flag.Int("max-group-by-cols-count", Config.MaxGroupByColsCount, "MaxGroupByColsCount, 单条 SQL 中 GroupBy 包含列的最大数量")
-	maxDistinctCount := flag.Int("max-distinct-count", Config.MaxDistinctCount, "MaxDistinctCount, 单条 SQL 中 Distinct 的最大数量")
-	maxIdxColsCount := flag.Int("max-index-cols-count", Config.MaxIdxColsCount, "MaxIdxColsCount, 复合索引中包含列的最大数量")
-	maxTextColsCount := flag.Int("max-text-cols-count", Config.MaxTextColsCount, "MaxTextColsCount, 表中含有的 text/blob 列的最大数量")
-	maxTotalRows := flag.Uint64("max-total-rows", Config.MaxTotalRows, "MaxTotalRows, 计算散粒度时，当数据行数大于MaxTotalRows即开启数据库保护模式，不计算散粒度")
-	maxQueryCost := flag.Int64("max-query-cost", Config.MaxQueryCost, "MaxQueryCost, last_query_cost 超过该值时将给予警告")
-	spaghettiQueryLength := flag.Int("spaghetti-query-length", Config.SpaghettiQueryLength, "SpaghettiQueryLength, SQL最大长度警告，超过该长度会给警告")
-	allowDropIdx := flag.Bool("allow-drop-index", Config.AllowDropIndex, "AllowDropIndex, 允许输出删除重复索引的建议")
-	maxInCount := flag.Int("max-in-count", Config.MaxInCount, "MaxInCount, IN()最大数量")
-	maxIdxBytesPerColumn := flag.Int("max-index-bytes-percolumn", Config.MaxIdxBytesPerColumn, "MaxIdxBytesPerColumn, 索引中单列最大字节数")
-	maxIdxBytes := flag.Int("max-index-bytes", Config.MaxIdxBytes, "MaxIdxBytes, 索引总长度限制")
-	allowCharsets := flag.String("allow-charsets", strings.ToLower(strings.Join(Config.AllowCharsets, ",")), "AllowCharsets")
-	allowCollates := flag.String("allow-collates", strings.ToLower(strings.Join(Config.AllowCollates, ",")), "AllowCollates")
-	allowEngines := flag.String("allow-engines", strings.ToLower(strings.Join(Config.AllowEngines, ",")), "AllowEngines")
-	maxIdxCount := flag.Int("max-index-count", Config.MaxIdxCount, "MaxIdxCount, 单表最大索引个数")
-	maxColCount := flag.Int("max-column-count", Config.MaxColCount, "MaxColCount, 单表允许的最大列数")
-	maxValueCount := flag.Int("max-value-count", Config.MaxValueCount, "MaxValueCount, INSERT/REPLACE 单次批量写入允许的行数")
-	idxPrefix := flag.String("index-prefix", Config.IdxPrefix, "IdxPrefix")
-	ukPrefix := flag.String("unique-key-prefix", Config.UkPrefix, "UkPrefix")
-	maxSubqueryDepth := flag.Int("max-subquery-depth", Config.MaxSubqueryDepth, "MaxSubqueryDepth")
-	maxVarcharLength := flag.Int("max-varchar-length", Config.MaxVarcharLength, "MaxVarcharLength")
-	columnNotAllowType := flag.String("column-not-allow-type", strings.Join(Config.ColumnNotAllowType, ","), "ColumnNotAllowType")
-	// ++++++++++++++EXPLAIN检查项+++++++++++++
-	explainSQLReportType := flag.String("explain-sql-report-type", strings.ToLower(Config.ExplainSQLReportType), "ExplainSQLReportType [pretty, sample, fingerprint]")
-	explainType := flag.String("explain-type", strings.ToLower(Config.ExplainType), "ExplainType [extended, partitions, traditional]")
-	explainFormat := flag.String("explain-format", strings.ToLower(Config.ExplainFormat), "ExplainFormat [json, traditional]")
-	explainWarnSelectType := flag.String("explain-warn-select-type", strings.Join(Config.ExplainWarnSelectType, ","), "ExplainWarnSelectType, 哪些select_type不建议使用")
-	explainWarnAccessType := flag.String("explain-warn-access-type", strings.Join(Config.ExplainWarnAccessType, ","), "ExplainWarnAccessType, 哪些access type不建议使用")
-	explainMaxKeyLength := flag.Int("explain-max-keys", Config.ExplainMaxKeyLength, "ExplainMaxKeyLength, 最大key_len")
-	explainMinPossibleKeys := flag.Int("explain-min-keys", Config.ExplainMinPossibleKeys, "ExplainMinPossibleKeys, 最小possible_keys警告")
-	explainMaxRows := flag.Int("explain-max-rows", Config.ExplainMaxRows, "ExplainMaxRows, 最大扫描行数警告")
-	explainWarnExtra := flag.String("explain-warn-extra", strings.Join(Config.ExplainWarnExtra, ","), "ExplainWarnExtra, 哪些extra信息会给警告")
-	explainMaxFiltered := flag.Float64("explain-max-filtered", Config.ExplainMaxFiltered, "ExplainMaxFiltered, filtered大于该配置给出警告")
-	explainWarnScalability := flag.String("explain-warn-scalability", strings.Join(Config.ExplainWarnScalability, ","), "ExplainWarnScalability, 复杂度警告名单, 支持O(n),O(log n),O(1),O(?)")
-	showWarnings := flag.Bool("show-warnings", Config.ShowWarnings, "ShowWarnings")
-	showLastQueryCost := flag.Bool("show-last-query-cost", Config.ShowLastQueryCost, "ShowLastQueryCost")
-	// +++++++++++++++++其他+++++++++++++++++++
-	printConfig := flag.Bool("print-config", false, "Print configs")
-	checkConfig := flag.Bool("check-config", false, "Check configs")
-	printVersion := flag.Bool("version", false, "Print version info")
-	query := flag.String("query", Config.Query, "待评审的 SQL 或 SQL 文件，如 SQL 中包含特殊字符建议使用文件名。")
-	listHeuristicRules := flag.Bool("list-heuristic-rules", Config.ListHeuristicRules, "ListHeuristicRules, 打印支持的评审规则列表")
-	listRewriteRules := flag.Bool("list-rewrite-rules", Config.ListRewriteRules, "ListRewriteRules, 打印支持的重写规则列表")
-	listTestSQLs := flag.Bool("list-test-sqls", Config.ListTestSqls, "ListTestSqls, 打印测试case用于测试")
-	listReportTypes := flag.Bool("list-report-types", Config.ListReportTypes, "ListReportTypes, 打印支持的报告输出类型")
-	verbose := flag.Bool("verbose", Config.Verbose, "Verbose")
-	dryrun := flag.Bool("dry-run", Config.DryRun, "是否在预演环境执行")
-	maxPrettySQLLength := flag.Int("max-pretty-sql-length", Config.MaxPrettySQLLength, "MaxPrettySQLLength, 超出该长度的SQL会转换成指纹输出")
-	// 一个不存在 log-level，用于更新 usage。
-	// 因为 vitess 里面也用了 flag，这些 vitess 的参数我们不需要关注
-	if !Config.Verbose && runtime.GOOS != "windows" {
-		flag.Usage = usage
-	}
-	flag.Parse()
-
-	Config.OnlineDSN = ParseDSN(*onlineDSN, Config.OnlineDSN)
-	Config.TestDSN = ParseDSN(*testDSN, Config.TestDSN)
-	Config.AllowOnlineAsTest = *allowOnlineAsTest
-	Config.DropTestTemporary = *dropTestTemporary
-	Config.CleanupTestDatabase = *cleanupTestDatabase
-	Config.OnlySyntaxCheck = *onlySyntaxCheck
-	Config.Profiling = *profiling
-	Config.Trace = *trace
-	Config.Explain = *explain
-	Config.Sampling = *sampling
-	Config.SamplingStatisticTarget = *samplingStatisticTarget
-	Config.SamplingCondition = *samplingCondition
-
-	Config.LogLevel = *logLevel
-
-	if filepath.IsAbs(*logOutput) || *logOutput == "" {
-		Config.LogOutput = *logOutput
-	} else {
-		Config.LogOutput = filepath.Join(BaseDir, *logOutput)
-	}
-
-	Config.ReportType = strings.ToLower(*reportType)
-	Config.ReportCSS = *reportCSS
-	Config.ReportJavascript = *reportJavascript
-	Config.ReportTitle = *reportTitle
-	Config.MarkdownExtensions = *markdownExtensions
-	Config.MarkdownHTMLFlags = *markdownHTMLFlags
-	Config.IgnoreRules = strings.Split(*ignoreRules, ",")
-	Config.RewriteRules = strings.Split(*rewriteRules, ",")
-	*blackList = strings.TrimSpace(*blackList)
-	Config.MinCardinality = *minCardinality
-
-	if filepath.IsAbs(*blackList) || *blackList == "" {
-		Config.BlackList = *blackList
-	} else {
-		Config.BlackList = filepath.Join(BaseDir, *blackList)
-	}
-
-	Config.MaxJoinTableCount = *maxJoinTableCount
-	Config.MaxGroupByColsCount = *maxGroupByColsCount
-	Config.MaxDistinctCount = *maxDistinctCount
-
-	if *maxIdxColsCount < 16 {
-		Config.MaxIdxColsCount = *maxIdxColsCount
-	} else {
-		Config.MaxIdxColsCount = 16
-	}
-
-	Config.MaxTextColsCount = *maxTextColsCount
-	Config.MaxIdxBytesPerColumn = *maxIdxBytesPerColumn
-	Config.MaxIdxBytes = *maxIdxBytes
-	if *allowCharsets != "" {
-		Config.AllowCharsets = strings.Split(strings.ToLower(*allowCharsets), ",")
-	}
-	if *allowCollates != "" {
-		Config.AllowCollates = strings.Split(strings.ToLower(*allowCollates), ",")
-	}
-	if *allowEngines != "" {
-		Config.AllowEngines = strings.Split(strings.ToLower(*allowEngines), ",")
-	}
-	Config.MaxIdxCount = *maxIdxCount
-	Config.MaxColCount = *maxColCount
-	Config.MaxValueCount = *maxValueCount
-	Config.IdxPrefix = *idxPrefix
-	Config.UkPrefix = *ukPrefix
-	Config.MaxSubqueryDepth = *maxSubqueryDepth
-	Config.MaxTotalRows = *maxTotalRows
-	Config.MaxQueryCost = *maxQueryCost
-	Config.AllowDropIndex = *allowDropIdx
-	Config.MaxInCount = *maxInCount
-	Config.SpaghettiQueryLength = *spaghettiQueryLength
-	Config.Query = *query
-	Config.Delimiter = *delimiter
-
-	Config.ExplainSQLReportType = strings.ToLower(*explainSQLReportType)
-	Config.ExplainType = strings.ToLower(*explainType)
-	Config.ExplainFormat = strings.ToLower(*explainFormat)
-	Config.ExplainWarnSelectType = strings.Split(*explainWarnSelectType, ",")
-	Config.ExplainWarnAccessType = strings.Split(*explainWarnAccessType, ",")
-	Config.ExplainMaxKeyLength = *explainMaxKeyLength
-	Config.ExplainMinPossibleKeys = *explainMinPossibleKeys
-	Config.ExplainMaxRows = *explainMaxRows
-	Config.ExplainWarnExtra = strings.Split(*explainWarnExtra, ",")
-	Config.ExplainMaxFiltered = *explainMaxFiltered
-	Config.ExplainWarnScalability = strings.Split(*explainWarnScalability, ",")
-	Config.ShowWarnings = *showWarnings
-	Config.ShowLastQueryCost = *showLastQueryCost
-	Config.ListHeuristicRules = *listHeuristicRules
-	Config.ListRewriteRules = *listRewriteRules
-	Config.ListTestSqls = *listTestSQLs
-	Config.ListReportTypes = *listReportTypes
-	Config.Verbose = *verbose
-	Config.DryRun = *dryrun
-	Config.MaxPrettySQLLength = *maxPrettySQLLength
-	Config.MaxVarcharLength = *maxVarcharLength
-	if *columnNotAllowType != "" {
-		Config.ColumnNotAllowType = strings.Split(strings.ToLower(*columnNotAllowType), ",")
-	}
-
-	PrintVersion = *printVersion
-	PrintConfig = *printConfig
-	CheckConfig = *checkConfig
-
-	hasParsed = true
-	return nil
-}
-
 // ParseConfig 加载配置文件和命令行参数
 func ParseConfig(configFile string) error {
 	var err error
@@ -781,12 +509,6 @@ func ParseConfig(configFile string) error {
 			// Log.Debug("ParseConfig use config file: %s", config)
 			break
 		}
-	}
-
-	err = readCmdFlags()
-	if err != nil {
-		Log.Error("ParseConfig readCmdFlags Error: %v", err)
-		return err
 	}
 
 	// parse blacklist & ignore blacklist file parse error
