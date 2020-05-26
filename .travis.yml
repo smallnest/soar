@@ -1,0 +1,26 @@
+language: go
+
+go:
+  - "top"
+  - "1.14.x"
+
+sudo: required
+
+go_import_path: github.com/smallnest/soar
+
+dist: xenial
+
+services:
+  - docker
+
+before_install:
+  - docker pull mysql
+  - sudo add-apt-repository ppa:duggan/bats --yes
+  - sudo apt-get update -qq
+  - sudo apt-get install -qq bats
+
+script:
+  - make build
+  - make docker
+  - make cover
+  - make test-cli

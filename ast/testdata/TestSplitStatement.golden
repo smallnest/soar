@@ -1,0 +1,51 @@
+0 select * from test;
+1 select 'asd;fas', col from test;
+2 -- select * from test;hello
+3 #select * from test;hello
+4 select * /*comment*/from test;
+5 select * /*comment;*/from test;
+6 select * /*comment
+		;*/
+		from test;
+7 select * from test
+8 /*comment*/
+9 /*comment*/;
+10 --
+11 -- comment
+12 # comment
+13 select
+*
+-- comment
+from tb
+where col = 1
+14 select
+* --
+from tb
+where col = 1
+15 select
+* #
+from tb
+where col = 1
+16 select
+*
+--
+from tb
+where col = 1
+17 select * from
+-- comment
+tb;
+18 
+-- comment
+19 INSERT /*+ SET_VAR(foreign_key_checks=OFF) */ INTO t2 VALUES(2);
+20 select /*!50000 1,*/ 1;
+21 UPDATE xxx SET c1=' LOGGER.error(""); }' WHERE id = 2 ;
+22 UPDATE `xxx` SET aaa='a;' WHERE `id` = 15;
+0 select * from test\G
+1 select 'hello\Gworld', col from test\G
+2 -- select * from test\Ghello
+3 #select * from test\Ghello
+4 select * /*comment*/from test\G
+5 select * /*comment;*/from test\G
+6 select * /*comment
+        \\G*/
+        from test\\G

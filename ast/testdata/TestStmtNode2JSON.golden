@@ -1,0 +1,63 @@
+[
+  {
+    "text": "select 1",
+    "resultFields": null,
+    "SQLBigResult": false,
+    "SQLBufferResult": false,
+    "SQLCache": true,
+    "SQLSmallResult": false,
+    "CalcFoundRows": false,
+    "StraightJoin": false,
+    "Priority": 0,
+    "Distinct": false,
+    "From": null,
+    "Where": null,
+    "Fields": {
+      "text": "",
+      "Fields": [
+        {
+          "text": "1",
+          "Offset": 7,
+          "WildCard": null,
+          "Expr": {
+            "text": "",
+            "Type": {
+              "Tp": 8,
+              "Flag": 128,
+              "Flen": 1,
+              "Decimal": 0,
+              "Charset": "binary",
+              "Collate": "binary",
+              "Elems": null
+            },
+            "flag": 0,
+            "k": 1,
+            "collation": 0,
+            "decimal": 0,
+            "length": 0,
+            "i": 1,
+            "b": null,
+            "x": null,
+            "projectionOffset": -1
+          },
+          "AsName": {
+            "O": "",
+            "L": ""
+          },
+          "Auxiliary": false
+        }
+      ]
+    },
+    "GroupBy": null,
+    "Having": null,
+    "WindowSpecs": null,
+    "OrderBy": null,
+    "Limit": null,
+    "LockTp": 0,
+    "TableHints": null,
+    "IsAfterUnionDistinct": false,
+    "IsInBraces": false,
+    "QueryBlockOffset": 0
+  }
+]
+
