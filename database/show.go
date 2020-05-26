@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/XiaoMi/soar/common"
+	"github.com/smallnest/soar/common"
 )
 
 // SHOW TABLE STATUS Syntax
@@ -156,8 +156,6 @@ func (db *Connector) ShowTableStatus(tableName string) (*TableStatInfo, error) {
 	for res.Rows.Next() {
 		err := res.Rows.Scan(statusFields...)
 		if err != nil {
-			// MariaDB 中视图的 STATUS 信息大部分表都为 NULL，此时会打印如下 DEBUG 级别日志信息，看到后忽略即可。
-			// sql: Scan error on column index 4: converting driver.Value type <nil> ("<nil>") to uint64: invalid syntax
 			common.Log.Debug(err.Error())
 		}
 		tbStatus.Rows = append(tbStatus.Rows, ts)

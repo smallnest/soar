@@ -23,11 +23,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/XiaoMi/soar/advisor"
-	"github.com/XiaoMi/soar/ast"
-	"github.com/XiaoMi/soar/common"
-	"github.com/XiaoMi/soar/database"
-	"github.com/XiaoMi/soar/env"
+	"github.com/smallnest/soar/advisor"
+	"github.com/smallnest/soar/ast"
+	"github.com/smallnest/soar/common"
+	"github.com/smallnest/soar/database"
+	"github.com/smallnest/soar/env"
 )
 
 // initConfig load config from default->file->cmdFlag

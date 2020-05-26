@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/XiaoMi/soar/common"
+	"github.com/smallnest/soar/common"
 )
 
 /*--------------------
@@ -138,7 +138,7 @@ func (db *Connector) startSampling(onlineConn *sql.DB, database, table string, w
 			} else {
 				switch columnTypes[i].DatabaseTypeName() {
 				case "JSON":
-					// https://github.com/XiaoMi/soar/issues/178
+					// https://github.com/smallnest/soar/issues/178
 					values = append(values, fmt.Sprintf(`convert(X'%s' using utf8mb4)`, fmt.Sprintf("%x", val)))
 				case "TIMESTAMP", "DATETIME":
 					t, err := time.Parse(time.RFC3339, string(val))

@@ -20,12 +20,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/pingcap/parser/ast"
 	"reflect"
 	"regexp"
 	"strings"
 
-	"github.com/XiaoMi/soar/common"
+	"github.com/smallnest/soar/common"
 
 	"github.com/kr/pretty"
 	"vitess.io/vitess/go/vt/sqlparser"
@@ -1689,42 +1688,21 @@ func MergeAlterTables(sqls ...string) map[string]string {
 	// CREATE [UNIQUE|FULLTEXT|SPATIAL|PRIMARY] [KEY|INDEX] idx_name ON tbl_name
 	createIndexExp := regexp.MustCompile(`(?i)create((unique)|(fulltext)|(spatial)|(primary)|(\s*)\s*)((index)|(key))\s*`)
 	indexNameExp := regexp.MustCompile(`(?i)(` + backTicks + `|([^\s]*))\s*`)
+	indexColsExp := regexp.MustCompile(`(?i)(` + backTicks + `|([^\s]*))\s*on\s*(` + backTicks + `|([^\s]*))\s*`)
 
 	for _, sql := range sqls {
 		sql = strings.Trim(sql, common.Config.Delimiter)
-		stmts, err := TiParse(sql, "", "")
-		if err != nil {
-			common.Log.Warn(err.Error())
-			continue
-		}
-		// stmt, _ := sqlparser.Parse(sql)
+		stmt, _ := sqlparser.Parse(sql)
 		alterSQL := ""
 		dbName := ""
 		tableName := ""
-		for _, stmt := range stmts {
-			switch n := stmt.(type) {
-			case *ast.AlterTableStmt:
-				// 注意: 表名和库名不区分大小写
-				tableName = n.Table.Name.L
-				dbName = n.Table.Schema.L
-				if alterExp.MatchString(sql) {
-					common.Log.Debug("rename alterExp: ALTER %v %v", tableName, alterExp.ReplaceAllString(sql, ""))
-					alterSQL = fmt.Sprint(alterExp.ReplaceAllString(sql, ""))
-				}
-			case *ast.CreateIndexStmt:
-				tableName = n.Table.Name.L
-				dbName = n.Table.Schema.L
-
-				buf := createIndexExp.ReplaceAllString(sql, "")
-				idxName := strings.TrimSpace(indexNameExp.FindString(buf))
-				buf = string([]byte(buf)[strings.Index(buf, "("):])
-				common.Log.Error(buf)
-				common.Log.Debug("alter createIndexExp: ALTER %v ADD INDEX %v %v", tableName, "ADD INDEX", idxName, buf)
-				alterSQL = fmt.Sprint("ADD INDEX", " "+idxName+" ", buf)
-			case *ast.RenameTableStmt:
-				// 注意: 表名和库名不区分大小写
-				tableName = n.OldTable.Name.L
-				dbName = n.OldTable.Schema.L
+		switch n := stmt.(type) {
+		case *sqlparser.DDL:
+			// 注意: 表名和库名不区分大小写
+			tableName = strings.ToLower(n.Table.Name.String())
+			dbName = strings.ToLower(n.Table.Qualifier.String())
+			switch n.Action {
+			case "rename":
 				if alterExp.MatchString(sql) {
 					common.Log.Debug("rename alterExp: ALTER %v %v", tableName, alterExp.ReplaceAllString(sql, ""))
 					alterSQL = fmt.Sprint(alterExp.ReplaceAllString(sql, ""))
@@ -1734,10 +1712,21 @@ func MergeAlterTables(sqls ...string) map[string]string {
 				} else {
 					common.Log.Warn("rename not match: ALTER %v %v", tableName, sql)
 				}
+			case "alter":
+				if alterExp.MatchString(sql) {
+					common.Log.Debug("rename alterExp: ALTER %v %v", tableName, alterExp.ReplaceAllString(sql, ""))
+					alterSQL = fmt.Sprint(alterExp.ReplaceAllString(sql, ""))
+				} else if createIndexExp.MatchString(sql) {
+					buf := createIndexExp.ReplaceAllString(sql, "")
+					idxName := strings.TrimSpace(indexNameExp.FindString(buf))
+					buf = indexColsExp.ReplaceAllString(buf, "")
+					common.Log.Debug("alter createIndexExp: ALTER %v ADD INDEX %v %v", tableName, "ADD INDEX", idxName, buf)
+					alterSQL = fmt.Sprint("ADD INDEX", " "+idxName+" ", buf)
+				}
 			default:
+
 			}
 		}
-
 		if alterSQL != "" && tableName != "" && tableName != "dual" {
 			if dbName == "" {
 				alterSQLs["`"+tableName+"`"] = append(alterSQLs["`"+tableName+"`"], alterSQL)

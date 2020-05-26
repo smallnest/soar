@@ -26,8 +26,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/XiaoMi/soar/ast"
-	"github.com/XiaoMi/soar/common"
+	"github.com/smallnest/soar/ast"
+	"github.com/smallnest/soar/common"
 
 	tidb "github.com/pingcap/parser/ast"
 	"github.com/tidwall/gjson"
@@ -84,7 +84,7 @@ type ExplainRow struct {
 	Key          string
 	KeyLen       string // 索引长度，如果发生了index_merge， KeyLen 格式为 N,N，所以不能定义为整型
 	Ref          []string
-	Rows         int64
+	Rows         int
 	Filtered     float64 // 5.6 JSON, 5.7+, 5.5 EXTENDED
 	Scalability  string  // O(1), O(n), O(log n), O(log n)+
 	Extra        string
@@ -131,7 +131,7 @@ type ExplainJSONTable struct {
 	UsedKeyParts             []string                            `json:"used_key_parts"`
 	KeyLength                string                              `json:"key_length"`
 	Ref                      []string                            `json:"ref"`
-	RowsExaminedPerScan      int64                               `json:"rows_examined_per_scan"`
+	RowsExaminedPerScan      int                                 `json:"rows_examined_per_scan"`
 	RowsProducedPerJoin      int                                 `json:"rows_produced_per_join"`
 	Filtered                 string                              `json:"filtered"`
 	UsingIndex               bool                                `json:"using_index"`
@@ -318,7 +318,6 @@ var ExplainAccessType = map[string]string{
 
 // ExplainScalability ACCESS TYPE对应的运算复杂度 [AccessType]scalability map
 var ExplainScalability = map[string]string{
-	"NULL":            "NULL",
 	"ALL":             "O(n)",
 	"index":           "O(n)",
 	"range":           "O(log n)+",
@@ -378,7 +377,6 @@ var ExplainExtra = map[string]string{
 	"No tables used":                           "查询没有FROM子句, 或者有一个 FROM DUAL子句.",
 	"Not exists":                               "MySQL能够对LEFT JOIN查询进行优化, 并且在查找到符合LEFT JOIN条件的行后, 则不再查找更多的行.",
 	"Plan isn't ready yet":                     "This value occurs with EXPLAIN FOR CONNECTION when the optimizer has not finished creating the execution plan for the statement executing in the named connection. If execution plan output comprises multiple lines, any or all of them could have this Extra value, depending on the progress of the optimizer in determining the full execution plan.",
-	"Select tables optimized away":             "仅通过使用索引，优化器可能仅从聚合函数结果中返回一行。如：在没有 GROUP BY 子句的情况下，基于索引优化 MIN/MAX 操作，或者对于 MyISAM 存储引擎优化 COUNT(*) 操作，不必等到执行阶段再进行计算，查询执行计划生成的阶段即完成优化。",
 	"Using intersect":                          "开启了index merge，即：对多个索引分别进行条件扫描，然后将它们各自的结果进行合并，使用的算法为：index_merge_intersection",
 	"Using union":                              "开启了index merge，即：对多个索引分别进行条件扫描，然后将它们各自的结果进行合并，使用的算法为：index_merge_union",
 	"Using sort_union":                         "开启了index merge，即：对多个索引分别进行条件扫描，然后将它们各自的结果进行合并，使用的算法为：index_merge_sort_union",
@@ -565,11 +563,6 @@ func (db *Connector) explainQuery(sql string, explainType int, formatType int) s
 	sql, err = db.explainAbleSQL(sql)
 	if sql == "" || err != nil {
 		return sql
-	} else {
-		// MySQL 5.7 support MAX_EXECUTION_TIME hint
-		// ref: https://dev.mysql.com/doc/refman/5.7/en/optimizer-hints.html
-		re := regexp.MustCompile(`(?i)(^select)(.*)`)
-		sql = re.ReplaceAllString(sql, "SELECT /*+ MAX_EXECUTION_TIME(1000) */${2}")
 	}
 
 	// 5.6以上支持 FORMAT=JSON
@@ -791,7 +784,7 @@ func parseTraditionalExplainText(content string) (explainRows []ExplainRow, err 
 	colsMap := make(map[string]string)
 	for _, l := range lines[3:] {
 		var keylen string
-		var rows int64
+		var rows int
 		var filtered float64
 		var partitions string
 		// 跳过分割线
@@ -823,7 +816,7 @@ func parseTraditionalExplainText(content string) (explainRows []ExplainRow, err 
 
 		keylen = colsMap["key_len"]
 
-		rows, err = strconv.ParseInt(colsMap["Rows"], 10, 64)
+		rows, err = strconv.Atoi(colsMap["Rows"])
 		if err != nil {
 			rows = 0
 		}
@@ -915,7 +908,7 @@ func parseVerticalExplainText(content string) (explainRows []ExplainRow, err err
 		}
 		if strings.HasPrefix(l, "Rows:") {
 			rows := strings.TrimPrefix(l, "Rows: ")
-			explainRow.Rows, err = strconv.ParseInt(rows, 10, 64)
+			explainRow.Rows, err = strconv.Atoi(rows)
 			if err != nil {
 				explainRow.Rows = 0
 			}
@@ -964,21 +957,15 @@ func ParseExplainResult(res QueryResult, formatType int) (exp *ExplainInfo, err 
 	}
 
 	/*
-				+----+-------------+-------+------------+------+---------------+------+---------+------+------+----------+-------+
-				| id | select_type | table | partitions | type | possible_keys | key  | key_len | ref  | rows | filtered | Extra |
-				+----+-------------+-------+------------+------+---------------+------+---------+------+------+----------+-------+
-				|  1 | SIMPLE      | film  | NULL       | ALL  | NULL          | NULL | NULL    | NULL | 1000 |   100.00 | NULL  |
-				+----+-------------+-------+------------+------+---------------+------+---------+------+------+----------+-------+
-
-		        +----+-------------+-------+------------+------+---------------+------+---------+------+------+----------+--------------------------------+
-		        | id | select_type | table | partitions | type | possible_keys | key  | key_len | ref  | rows | filtered | Extra                          |
-		        +----+-------------+-------+------------+------+---------------+------+---------+------+------+----------+--------------------------------+
-		        |  1 | SIMPLE      | NULL  | NULL       | NULL | NULL          | NULL | NULL    | NULL | NULL |     NULL | no matching row in const table |
-		        +----+-------------+-------+------------+------+---------------+------+---------+------+------+----------+--------------------------------+
+		+----+-------------+-------+------------+------+---------------+------+---------+------+------+----------+-------+
+		| id | select_type | table | partitions | type | possible_keys | key  | key_len | ref  | rows | filtered | Extra |
+		+----+-------------+-------+------------+------+---------------+------+---------+------+------+----------+-------+
+		|  1 | SIMPLE      | film  | NULL       | ALL  | NULL          | NULL | NULL    | NULL | 1000 |   100.00 | NULL  |
+		+----+-------------+-------+------------+------+---------------+------+---------+------+------+----------+-------+
 	*/
 
 	// Different MySQL version has different columns define
-	var selectType, table, partitions, accessType, possibleKeys, key, keyLen, ref, extra, rows, filtered []byte
+	var selectType, table, partitions, accessType, possibleKeys, key, keyLen, ref, extra []byte
 	expRow := ExplainRow{}
 	explainFields := make([]interface{}, 0)
 	fields := map[string]interface{}{
@@ -991,8 +978,8 @@ func ParseExplainResult(res QueryResult, formatType int) (exp *ExplainInfo, err 
 		"key":           &key,
 		"key_len":       &keyLen,
 		"ref":           &ref,
-		"rows":          &rows,
-		"filtered":      &filtered,
+		"rows":          &expRow.Rows,
+		"filtered":      &expRow.Filtered,
 		"Extra":         &extra,
 	}
 	cols, err := res.Rows.Columns()
@@ -1022,8 +1009,6 @@ func ParseExplainResult(res QueryResult, formatType int) (exp *ExplainInfo, err 
 		expRow.Key = NullString(key)
 		expRow.KeyLen = NullString(keyLen)
 		expRow.Ref = strings.Split(NullString(ref), ",")
-		expRow.Rows = NullInt(rows)
-		expRow.Filtered = NullFloat(filtered)
 		expRow.Extra = NullString(extra)
 
 		// MySQL bug: https://bugs.mysql.com/bug.php?id=34124
@@ -1130,9 +1115,7 @@ func PrintMarkdownExplainTable(exp *ExplainInfo) string {
 			}
 			scalability := row.Scalability
 			for _, s := range common.Config.ExplainWarnScalability {
-				if s == scalability {
-					scalability = "☠️ **" + s + "**"
-				}
+				scalability = "☠️ **" + s + "**"
 			}
 			buf = append(buf, fmt.Sprintln("|", row.ID, " |",
 				common.MarkdownEscape(row.SelectType),

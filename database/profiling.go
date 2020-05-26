@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/XiaoMi/soar/common"
+	"github.com/smallnest/soar/common"
 
 	"vitess.io/vitess/go/vt/sqlparser"
 )

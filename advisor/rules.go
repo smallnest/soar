@@ -24,8 +24,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/XiaoMi/soar/ast"
-	"github.com/XiaoMi/soar/common"
+	"github.com/smallnest/soar/ast"
+	"github.com/smallnest/soar/common"
 
 	"github.com/kr/pretty"
 	"github.com/percona/go-mysql/query"
@@ -62,7 +62,7 @@ func NewQuery4Audit(sql string, options ...string) (*Query4Audit, error) {
 	}
 
 	// TODO: charset, collation
-	// tidb parser 语法解析
+	// tdib parser 语法解析
 	q.TiStmt, err = ast.TiParse(sql, charset, collation)
 	return q, err
 }
@@ -272,14 +272,6 @@ func init() {
 			Case:     "INSERT INTO tb (a) VALUES (1), (2)",
 			Func:     (*Query4Audit).RuleInsertValues,
 		},
-		"ARG.013": {
-			Item:     "ARG.013",
-			Severity: "L0",
-			Summary:  "DDL 语句中使用了中文全角引号",
-			Content:  "DDL 语句中使用了中文全角引号“”或‘’，这可能是书写错误，请确认是否符合预期。",
-			Case:     "CREATE TABLE tb (a varchar(10) default '“”'",
-			Func:     (*Query4Audit).RuleFullWidthQuote,
-		},
 		"CLA.001": {
 			Item:     "CLA.001",
 			Severity: "L4",
@@ -429,7 +421,7 @@ func init() {
 			Summary:  "不要 UPDATE 主键",
 			Content:  `主键是数据表中记录的唯一标识符，不建议频繁更新主键列，这将影响元数据统计信息进而影响正常的查询。`,
 			Case:     "update tbl set col=1",
-			Func:     (*Query4Audit).RuleOK, // 该建议在indexAdvisor中给 RuleUpdatePrimaryKey
+			Func:     (*Query4Audit).RuleOK, // 该建议在indexAdvisor中给
 		},
 		"COL.001": {
 			Item:     "COL.001",
@@ -531,8 +523,8 @@ func init() {
 		"COL.013": {
 			Item:     "COL.013",
 			Severity: "L4",
-			Summary:  "TIMESTAMP 类型默认值检查异常",
-			Content:  `TIMESTAMP 类型建议设置默认值，且不建议使用 0 或 0000-00-00 00:00:00 作为默认值。可以考虑使用 1970-08-02 01:01:01`,
+			Summary:  "TIMESTAMP 类型未设置默认值",
+			Content:  `TIMESTAMP 类型未设置默认值`,
 			Case:     "CREATE TABLE tbl( `id` bigint not null, `create_time` timestamp);",
 			Func:     (*Query4Audit).RuleTimestampDefault,
 		},
@@ -557,7 +549,7 @@ func init() {
 			Item:     "COL.016",
 			Severity: "L1",
 			Summary:  "整型定义建议采用 INT(10) 或 BIGINT(20)",
-			Content:  `INT(M) 在 integer 数据类型中，M 表示最大显示宽度。 在 INT(M) 中，M 的值跟 INT(M) 所占多少存储空间并无任何关系。 INT(3)、INT(4)、INT(8) 在磁盘上都是占用 4 bytes 的存储空间。高版本 MySQL 已经不推荐设置整数显示宽度。`,
+			Content:  `INT(M) 在 integer 数据类型中，M 表示最大显示宽度。 在 INT(M) 中，M 的值跟 INT(M) 所占多少存储空间并无任何关系。 INT(3)、INT(4)、INT(8) 在磁盘上都是占用 4 bytes 的存储空间。`,
 			Case:     "CREATE TABLE tab (a INT(1));",
 			Func:     (*Query4Audit).RuleIntPrecision,
 		},
@@ -631,7 +623,7 @@ func init() {
 			Item:     "FUN.003",
 			Severity: "L3",
 			Summary:  "使用了合并为可空列的字符串连接",
-			Content:  `在一些查询请求中，您需要强制让某一列或者某个表达式返回非 NULL 的值，从而让查询逻辑变得更简单，但又不想将这个值存下来。可以使用 COALESCE() 函数来构造连接的表达式，这样即使是空值列也不会使整表达式变为 NULL。`,
+			Content:  `在一些查询请求中，您需要强制让某一列或者某个表达式返回非 NULL 的值，从而让查询逻辑变得更简单，担忧不想将这个值存下来。使用 COALESCE() 函数来构造连接的表达式，这样即使是空值列也不会使整表达式变为 NULL。`,
 			Case:     "select c1 || coalesce(' ' || c2 || ' ', ' ') || c3 as c from tbl",
 			Func:     (*Query4Audit).RuleStringConcatenation,
 		},
@@ -689,7 +681,7 @@ func init() {
 			Summary:  "不建议对等值查询列使用 GROUP BY",
 			Content:  `GROUP BY 中的列在前面的 WHERE 条件中使用了等值查询，对这样的列进行 GROUP BY 意义不大。`,
 			Case:     "select film_id, title from film where release_year='2006' group by release_year",
-			Func:     (*Query4Audit).RuleOK, // 该建议在indexAdvisor中给 RuleGroupByConst
+			Func:     (*Query4Audit).RuleOK, // 该建议在indexAdvisor中给
 		},
 		"JOI.001": {
 			Item:     "JOI.001",
@@ -989,22 +981,6 @@ func init() {
 			Case:     "SELECT * FROM tbl WHERE col = col = 'abc'",
 			Func:     (*Query4Audit).RuleMultiCompare,
 		},
-		"RES.010": {
-			Item:     "RES.010",
-			Severity: "L2",
-			Summary:  "建表语句中定义为 ON UPDATE CURRENT_TIMESTAMP 的字段不建议包含业务逻辑",
-			Content:  "定义为 ON UPDATE CURRENT_TIMESTAMP 的字段在该表其他字段更新时会联动修改，如果包含业务逻辑用户可见会埋下隐患。后续如有批量修改数据却又不想修改该字段时会导致数据错误。",
-			Case: `CREATE TABLE category (category_id TINYINT UNSIGNED NOT NULL AUTO_INCREMENT,	name VARCHAR(25) NOT NULL, last_update TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY  (category_id)`,
-			Func: (*Query4Audit).RuleCreateOnUpdate,
-		},
-		"RES.011": {
-			Item:     "RES.011",
-			Severity: "L2",
-			Summary:  "更新请求操作的表包含 ON UPDATE CURRENT_TIMESTAMP 字段",
-			Content:  "定义为 ON UPDATE CURRENT_TIMESTAMP 的字段在该表其他字段更新时会联动修改，请注意检查。如不想修改字段的更新时间可以使用如下方法：UPDATE category SET name='ActioN', last_update=last_update WHERE category_id=1",
-			Case:     "UPDATE category SET name='ActioN', last_update=last_update WHERE category_id=1",
-			Func:     (*Query4Audit).RuleOK, // 该建议在indexAdvisor中给 RuleUpdateOnUpdate
-		},
 		"SEC.001": {
 			Item:     "SEC.001",
 			Severity: "L0",
@@ -1028,14 +1004,6 @@ func init() {
 			Content:  `在执行高危操作之前对数据进行备份是十分有必要的。`,
 			Case:     "delete from table where col = 'condition'",
 			Func:     (*Query4Audit).RuleDataDrop,
-		},
-		"SEC.004": {
-			Item:     "SEC.004",
-			Severity: "L0",
-			Summary:  "发现常见 SQL 注入函数",
-			Content:  `SLEEP(), BENCHMARK(), GET_LOCK(), RELEASE_LOCK() 等函数通常出现在 SQL 注入语句中，会严重影响数据库性能。`,
-			Case:     "SELECT BENCHMARK(10, RAND())",
-			Func:     (*Query4Audit).RuleInjection,
 		},
 		"STA.001": {
 			Item:     "STA.001",
@@ -1120,14 +1088,6 @@ func init() {
 			Content:  `MySQL将外部查询中的每一行作为依赖子查询执行子查询，如果在子查询中使用函数，即使是semi-join也很难进行高效的查询。可以将子查询重写为OUTER JOIN语句并用连接条件对数据进行过滤。`,
 			Case:     "SELECT * FROM staff WHERE name IN (SELECT max(NAME) FROM customer)",
 			Func:     (*Query4Audit).RuleSubQueryFunctions,
-		},
-		"SUB.007": {
-			Item:     "SUB.007",
-			Severity: "L2",
-			Summary:  "外层带有 LIMIT 输出限制的 UNION 联合查询，其内层查询建议也添加 LIMIT 输出限制",
-			Content:  `有时 MySQL 无法将限制条件从外层“下推”到内层，这会使得原本可以限制能够限制部分返回结果的条件无法应用到内层查询的优化上。比如：(SELECT * FROM tb1 ORDER BY name) UNION ALL (SELECT * FROM tb2 ORDER BY name) LIMIT 20;  MySQL 会将两个子查询的结果放在一个临时表中，然后取出 20 条结果，可以通过在两个子查询中添加 LIMIT 20 来减少临时表中的数据。(SELECT * FROM tb1 ORDER BY name LIMIT 20) UNION ALL (SELECT * FROM tb2 ORDER BY name LIMIT 20) LIMIT 20;`,
-			Case:     "(SELECT * FROM tb1 ORDER BY name LIMIT 20) UNION ALL (SELECT * FROM tb2 ORDER BY name LIMIT 20) LIMIT 20;",
-			Func:     (*Query4Audit).RuleUNIONLimit,
 		},
 		"TBL.001": {
 			Item:     "TBL.001",
@@ -1234,7 +1194,7 @@ func InBlackList(sql string) bool {
 }
 
 // FormatSuggest 格式化输出优化建议
-func FormatSuggest(sql string, currentDB string, format string, suggests ...map[string]Rule) (map[string]Rule, string) {
+func FormatSuggest(sql string, format string, suggests ...map[string]Rule) (map[string]Rule, string) {
 	common.Log.Debug("FormatSuggest, Query: %s", sql)
 	var fingerprint, id string
 	var buf []string
@@ -1284,7 +1244,17 @@ func FormatSuggest(sql string, currentDB string, format string, suggests ...map[
 	common.Log.Debug("FormatSuggest, format: %s", format)
 	switch format {
 	case "json":
-		buf = append(buf, formatJSON(sql, currentDB, suggest))
+		js, err := json.MarshalIndent(Result{
+			ID:          id,
+			Fingerprint: fingerprint,
+			Sample:      sql,
+			Suggest:     suggest,
+		}, "", "  ")
+		if err == nil {
+			buf = append(buf, fmt.Sprintln(string(js)))
+		} else {
+			common.Log.Error("FormatSuggest json.Marshal Error: %v", err)
+		}
 
 	case "text":
 		for item, rule := range suggest {
@@ -1472,94 +1442,6 @@ func FormatSuggest(sql string, currentDB string, format string, suggests ...map[
 	}
 
 	return suggest, str
-}
-
-// JSONSuggest json format suggestion
-type JSONSuggest struct {
-	ID             string   `json:"ID"`
-	Fingerprint    string   `json:"Fingerprint"`
-	Score          int      `json:"Score"`
-	Sample         string   `json:"Sample"`
-	Explain        []Rule   `json:"Explain"`
-	HeuristicRules []Rule   `json:"HeuristicRules"`
-	IndexRules     []Rule   `json:"IndexRules"`
-	Tables         []string `json:"Tables"`
-}
-
-func formatJSON(sql string, db string, suggest map[string]Rule) string {
-	var id, fingerprint, result string
-
-	fingerprint = query.Fingerprint(sql)
-	id = query.Id(fingerprint)
-
-	// Score
-	score := 100
-	for item := range suggest {
-		l, err := strconv.Atoi(strings.TrimLeft(suggest[item].Severity, "L"))
-		if err != nil {
-			common.Log.Error("formatJSON strconv.Atoi error: %s, item: %s, serverity: %s", err.Error(), item, suggest[item].Severity)
-		}
-		score = score - l*5
-	}
-	if score < 0 {
-		score = 0
-	}
-
-	sug := JSONSuggest{
-		ID:          id,
-		Fingerprint: fingerprint,
-		Sample:      sql,
-		Tables:      ast.SchemaMetaInfo(sql, db),
-		Score:       score,
-	}
-
-	// Explain info
-	var sortItem []string
-	for item := range suggest {
-		if strings.HasPrefix(item, "EXP") {
-			sortItem = append(sortItem, item)
-		}
-	}
-	sort.Strings(sortItem)
-	for _, i := range sortItem {
-		sug.Explain = append(sug.Explain, suggest[i])
-	}
-	sortItem = make([]string, 0)
-
-	// Index advisor
-	for item := range suggest {
-		if strings.HasPrefix(item, "IDX") {
-			sortItem = append(sortItem, item)
-		}
-	}
-	sort.Strings(sortItem)
-	for _, i := range sortItem {
-		sug.IndexRules = append(sug.IndexRules, suggest[i])
-	}
-	sortItem = make([]string, 0)
-
-	// Heuristic rules
-	for item := range suggest {
-		if !strings.HasPrefix(item, "EXP") && !strings.HasPrefix(item, "IDX") {
-			if strings.HasPrefix(item, "ERR") && suggest[item].Content == "" {
-				continue
-			}
-			sortItem = append(sortItem, item)
-		}
-	}
-	sort.Strings(sortItem)
-	for _, i := range sortItem {
-		sug.HeuristicRules = append(sug.HeuristicRules, suggest[i])
-	}
-	sortItem = make([]string, 0)
-
-	js, err := json.MarshalIndent(sug, "", "  ")
-	if err == nil {
-		result = fmt.Sprint(string(js))
-	} else {
-		common.Log.Error("formatJSON json.Marshal Error: %v", err)
-	}
-	return result
 }
 
 // ListHeuristicRules 打印支持的启发式规则，对应命令行参数-list-heuristic-rules

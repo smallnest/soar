@@ -22,11 +22,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/XiaoMi/soar/advisor"
-	"github.com/XiaoMi/soar/ast"
-	"github.com/XiaoMi/soar/common"
-	"github.com/XiaoMi/soar/database"
-	"github.com/XiaoMi/soar/env"
+	"github.com/smallnest/soar/advisor"
+	"github.com/smallnest/soar/ast"
+	"github.com/smallnest/soar/common"
+	"github.com/smallnest/soar/database"
+	"github.com/smallnest/soar/env"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/kr/pretty"
@@ -37,14 +37,11 @@ func main() {
 	// 全局变量
 	var err error
 	var sql string                                            // 单条评审指定的 sql 或 explain
-	var currentDB string                                      // 当前 SQL 使用的 database
 	sqlCounter := 1                                           // SQL 计数器
 	lineCounter := 1                                          // 行计数器
 	var alterSQLs []string                                    // 待评审的 SQL 中所有 ALTER 请求
 	alterTableTimes := make(map[string]int)                   // 待评审的 SQL 中同一经表 ALTER 请求计数器
 	suggestMerged := make(map[string]map[string]advisor.Rule) // 优化建议去重, key 为 sql 的 fingerprint.ID
-	var suggestStr []string                                   // string 形式格式化之后的优化建议，用于 -report-type json
-	tables := make(map[string][]string)                       // SQL 使用的库表名
 
 	// 配置文件&命令行参数解析
 	initConfig()
@@ -76,7 +73,7 @@ func main() {
 	// 对指定的库表进行索引重复检查
 	if common.Config.ReportType == "duplicate-key-checker" {
 		dupKeySuggest := advisor.DuplicateKeyChecker(rEnv)
-		_, str := advisor.FormatSuggest("", currentDB, common.Config.ReportType, dupKeySuggest)
+		_, str := advisor.FormatSuggest("", common.Config.ReportType, dupKeySuggest)
 		if str == "" {
 			fmt.Printf("%s/%s 未发现重复索引\n", common.Config.OnlineDSN.Addr, common.Config.OnlineDSN.Schema)
 		} else {
@@ -119,14 +116,7 @@ func main() {
 		// leftLineCounter
 		llc := ast.LeftNewLines([]byte(orgSQL))
 		lineCounter += llc
-		if len(buf) == len(bufBytes) {
-			// 防止切分死循环，当剩余的内容和原 SQL 相同时直接清空 buf
-			buf = ""
-			orgSQL = string(bufBytes)
-			sql = orgSQL
-		} else {
-			buf = string(bufBytes)
-		}
+		buf = string(bufBytes)
 
 		// 去除无用的备注和空格
 		sql = database.RemoveSQLComments(sql)
@@ -138,15 +128,9 @@ func main() {
 
 		// +++++++++++++++++++++小工具集[开始]+++++++++++++++++++++++{
 		fingerprint := strings.TrimSpace(query.Fingerprint(sql))
-		// SQL 签名
-		id = query.Id(fingerprint)
-		currentDB = env.CurrentDB(sql, currentDB)
 		switch common.Config.ReportType {
 		case "fingerprint":
 			// SQL 指纹
-			if common.Config.Verbose {
-				fmt.Printf("-- ID: %s\n", id)
-			}
 			fmt.Println(fingerprint)
 			continue
 		case "pretty":
@@ -179,23 +163,18 @@ func main() {
 			common.LogIfWarn(err, "")
 			continue
 		default:
+			// SQL 签名
+			id = query.Id(fingerprint)
 			// 建议去重，减少评审整个文件耗时
 			// TODO: 由于 a = 11 和 a = '11' 的 fingerprint 相同，这里一旦跳过即无法检查有些建议了，如： ARG.003
 			if _, ok := suggestMerged[id]; ok {
-				// `use ?` 不可以去重，去重后将导致无法切换数据库
-				if !strings.HasPrefix(fingerprint, "use") {
-					continue
-				}
+				continue
 			}
 			// 黑名单中的SQL不给建议
 			if advisor.InBlackList(fingerprint) {
-				// `use ?` 不可以出现在黑名单中
-				if !strings.HasPrefix(fingerprint, "use") {
-					continue
-				}
+				continue
 			}
 		}
-		tables[id] = ast.SchemaMetaInfo(sql, currentDB)
 		// +++++++++++++++++++++小工具集[结束]+++++++++++++++++++++++}
 
 		// +++++++++++++++++++++语法检查[开始]+++++++++++++++++++++++{
@@ -206,8 +185,7 @@ func main() {
 		if syntaxErr != nil {
 			errContent := fmt.Sprintf("At SQL %d : %v", sqlCounter, syntaxErr)
 			common.Log.Warning(errContent)
-			if common.Config.OnlySyntaxCheck || common.Config.ReportType == "rewrite" ||
-				common.Config.ReportType == "query-type" {
+			if common.Config.OnlySyntaxCheck || common.Config.ReportType == "rewrite" {
 				fmt.Println(errContent)
 				os.Exit(1)
 			}
@@ -218,16 +196,8 @@ func main() {
 		if common.Config.OnlySyntaxCheck {
 			continue
 		}
-		// +++++++++++++++++++++语法检查[结束]+++++++++++++++++++++++}
 
-		switch common.Config.ReportType {
-		case "tables":
-			continue
-		case "query-type":
-			// query type by first key word
-			fmt.Println(ast.QueryType(sql))
-			continue
-		}
+		// +++++++++++++++++++++语法检查[结束]+++++++++++++++++++++++}
 
 		// +++++++++++++++++++++启发式规则建议[开始]+++++++++++++++++++++++{
 		common.Log.Debug("start of heuristic advisor Query: %s", q.Query)
@@ -281,7 +251,9 @@ func main() {
 							}
 						default:
 							// vEnv.VEnvBuild 阶段给出的 ERROR 是 ERR.001
-							delete(mysqlSuggest, "ERR.000")
+							if _, ok := mysqlSuggest["ERR.000"]; ok {
+								delete(mysqlSuggest, "ERR.000")
+							}
 							mysqlSuggest["ERR.001"] = advisor.RuleMySQLError("ERR.001", vEnv.Error)
 							common.Log.Error("BuildVirtualEnv DDL Execute Error : %v", vEnv.Error)
 						}
@@ -401,15 +373,10 @@ func main() {
 
 		// +++++++++++++++++++++打印单条 SQL 优化建议[开始]++++++++++++++++++++++++++{
 		common.Log.Debug("start of print suggestions, Query: %s", q.Query)
-		if strings.HasPrefix(fingerprint, "use") {
-			continue
-		}
-		sug, str := advisor.FormatSuggest(q.Query, currentDB, common.Config.ReportType, heuristicSuggest, idxSuggest, expSuggest, proSuggest, traceSuggest, mysqlSuggest)
+		sug, str := advisor.FormatSuggest(q.Query, common.Config.ReportType, heuristicSuggest, idxSuggest, expSuggest, proSuggest, traceSuggest, mysqlSuggest)
 		suggestMerged[id] = sug
 		switch common.Config.ReportType {
 		case "json":
-			suggestStr = append(suggestStr, str)
-		case "tables":
 		case "duplicate-key-checker":
 		case "rewrite":
 		case "lint":
@@ -449,12 +416,7 @@ func main() {
 
 	// 以 JSON 格式化输出
 	if common.Config.ReportType == "json" {
-		fmt.Println("[\n", strings.Join(suggestStr, ",\n"), "\n]")
-	}
-
-	// 以 JSON 格式输出 SQL 影响的库表名
-	if common.Config.ReportType == "tables" {
-		js, err := json.MarshalIndent(tables, "", "  ")
+		js, err := json.MarshalIndent(suggestMerged, "", "  ")
 		if err == nil {
 			fmt.Println(string(js))
 		} else {

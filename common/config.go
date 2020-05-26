@@ -32,7 +32,7 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -121,7 +121,7 @@ type Configuration struct {
 	ExplainWarnAccessType  []string `yaml:"explain-warn-access-type"` // 哪些 access type 不建议使用
 	ExplainMaxKeyLength    int      `yaml:"explain-max-keys"`         // 最大 key_len
 	ExplainMinPossibleKeys int      `yaml:"explain-min-keys"`         // 最小 possible_keys 警告
-	ExplainMaxRows         int64    `yaml:"explain-max-rows"`         // 最大扫描行数警告
+	ExplainMaxRows         int      `yaml:"explain-max-rows"`         // 最大扫描行数警告
 	ExplainWarnExtra       []string `yaml:"explain-warn-extra"`       // 哪些 extra 信息会给警告
 	ExplainMaxFiltered     float64  `yaml:"explain-max-filtered"`     // filtered 大于该配置给出警告
 	ExplainWarnScalability []string `yaml:"explain-warn-scalability"` // 复杂度警告名单
@@ -238,9 +238,9 @@ type Dsn struct {
 	ServerPubKey     string            `yaml:"server-public-key"`  // Server public key name
 	MaxAllowedPacket int               `ymal:"max-allowed-packet"` // Max packet size allowed
 	Params           map[string]string `yaml:"params"`             // Other Connection parameters, `SET param=val`, `SET NAMES charset`
-	Timeout          string            `yaml:"timeout"`            // Dial timeout
-	ReadTimeout      string            `yaml:"read-timeout"`       // I/O read timeout
-	WriteTimeout     string            `yaml:"write-timeout"`      // I/O write timeout
+	Timeout          int               `yaml:"timeout"`            // Dial timeout
+	ReadTimeout      int               `yaml:"read-timeout"`       // I/O read timeout
+	WriteTimeout     int               `yaml:"write-timeout"`      // I/O write timeout
 
 	AllowNativePasswords bool `yaml:"allow-native-passwords"` // Allows the native password authentication method
 	AllowOldPasswords    bool `yaml:"allow-old-passwords"`    // Allows the old insecure password method
@@ -255,7 +255,6 @@ func newDSN(cfg *mysql.Config) *Dsn {
 		Net:                  "tcp",
 		Schema:               "information_schema",
 		Charset:              "utf8",
-		Timeout:              "3s",
 		AllowNativePasswords: true,
 		Params:               make(map[string]string),
 		MaxAllowedPacket:     4 << 20, // 4 MiB
@@ -283,16 +282,16 @@ func newDSN(cfg *mysql.Config) *Dsn {
 	dsn.MaxAllowedPacket = cfg.MaxAllowedPacket
 	dsn.ServerPubKey = cfg.ServerPubKey
 	dsn.TLS = cfg.TLSConfig
-	dsn.Timeout = cfg.Timeout.String()
-	dsn.ReadTimeout = cfg.ReadTimeout.String()
-	dsn.WriteTimeout = cfg.WriteTimeout.String()
+	dsn.Timeout = int(cfg.Timeout / time.Second)
+	dsn.ReadTimeout = int(cfg.ReadTimeout / time.Second)
+	dsn.WriteTimeout = int(cfg.WriteTimeout / time.Second)
 	dsn.AllowNativePasswords = cfg.AllowNativePasswords
 	dsn.AllowOldPasswords = cfg.AllowOldPasswords
 	return dsn
 }
 
 // newMySQLConfig convert Dsn to go-sql-drive Config
-func (env *Dsn) newMySQLConfig() (*mysql.Config, error) {
+func (env *Dsn) newMySQLConifg() (*mysql.Config, error) {
 	var err error
 	dsn := mysql.NewConfig()
 
@@ -314,18 +313,9 @@ func (env *Dsn) newMySQLConfig() (*mysql.Config, error) {
 	dsn.MaxAllowedPacket = env.MaxAllowedPacket
 	dsn.ServerPubKey = env.ServerPubKey
 	dsn.TLSConfig = env.TLS
-	if env.Timeout != "" {
-		dsn.Timeout, err = time.ParseDuration(env.Timeout)
-		LogIfError(err, "timeout: '%s'", env.Timeout)
-	}
-	if env.WriteTimeout != "" {
-		dsn.WriteTimeout, err = time.ParseDuration(env.WriteTimeout)
-		LogIfError(err, "writeTimeout: '%s'", env.WriteTimeout)
-	}
-	if env.ReadTimeout != "" {
-		dsn.ReadTimeout, err = time.ParseDuration(env.ReadTimeout)
-		LogIfError(err, "readTimeout: '%s'", env.ReadTimeout)
-	}
+	dsn.Timeout = time.Duration(env.Timeout) * time.Second
+	dsn.ReadTimeout = time.Duration(env.ReadTimeout) * time.Second
+	dsn.WriteTimeout = time.Duration(env.WriteTimeout) * time.Second
 	dsn.AllowNativePasswords = env.AllowNativePasswords
 	dsn.AllowOldPasswords = env.AllowOldPasswords
 	return dsn, err
@@ -334,7 +324,7 @@ func (env *Dsn) newMySQLConfig() (*mysql.Config, error) {
 // 解析命令行DSN输入
 func parseDSN(odbc string, d *Dsn) *Dsn {
 	dsn := newDSN(nil)
-	var addr, user, password, schema, charset, timeout string
+	var addr, user, password, schema, charset string
 	if odbc == FormatDSN(d) {
 		return d
 	}
@@ -346,7 +336,6 @@ func parseDSN(odbc string, d *Dsn) *Dsn {
 		password = d.Password
 		schema = d.Schema
 		charset = d.Charset
-		timeout = d.Timeout
 	}
 
 	// 设置为空表示禁用环境
@@ -409,8 +398,6 @@ func parseDSN(odbc string, d *Dsn) *Dsn {
 				switch arg {
 				case "charset":
 					charset = val
-				case "timeout":
-					timeout = val
 				default:
 				}
 			}
@@ -427,17 +414,11 @@ func parseDSN(odbc string, d *Dsn) *Dsn {
 		charset = "utf8"
 	}
 
-	// 默认连接数据库超时时间 3s
-	if timeout == "" {
-		timeout = "3s"
-	}
-
 	dsn.Addr = addr
 	dsn.User = user
 	dsn.Password = password
 	dsn.Schema = schema
 	dsn.Charset = charset
-	dsn.Timeout = timeout
 	return dsn
 }
 
@@ -456,7 +437,7 @@ func FormatDSN(env *Dsn) string {
 	if env == nil || env.Disable {
 		return ""
 	}
-	dsn, err := env.newMySQLConfig()
+	dsn, err := env.newMySQLConifg()
 	if err != nil {
 		return ""
 	}
@@ -641,7 +622,7 @@ func readCmdFlags() error {
 	explainWarnAccessType := flag.String("explain-warn-access-type", strings.Join(Config.ExplainWarnAccessType, ","), "ExplainWarnAccessType, 哪些access type不建议使用")
 	explainMaxKeyLength := flag.Int("explain-max-keys", Config.ExplainMaxKeyLength, "ExplainMaxKeyLength, 最大key_len")
 	explainMinPossibleKeys := flag.Int("explain-min-keys", Config.ExplainMinPossibleKeys, "ExplainMinPossibleKeys, 最小possible_keys警告")
-	explainMaxRows := flag.Int64("explain-max-rows", Config.ExplainMaxRows, "ExplainMaxRows, 最大扫描行数警告")
+	explainMaxRows := flag.Int("explain-max-rows", Config.ExplainMaxRows, "ExplainMaxRows, 最大扫描行数警告")
 	explainWarnExtra := flag.String("explain-warn-extra", strings.Join(Config.ExplainWarnExtra, ","), "ExplainWarnExtra, 哪些extra信息会给警告")
 	explainMaxFiltered := flag.Float64("explain-max-filtered", Config.ExplainMaxFiltered, "ExplainMaxFiltered, filtered大于该配置给出警告")
 	explainWarnScalability := flag.String("explain-warn-scalability", strings.Join(Config.ExplainWarnScalability, ","), "ExplainWarnScalability, 复杂度警告名单, 支持O(n),O(log n),O(1),O(?)")
@@ -688,9 +669,6 @@ func readCmdFlags() error {
 	}
 
 	Config.ReportType = strings.ToLower(*reportType)
-	if Config.ReportType == "tables" && Config.TestDSN.Schema == "information_schema" {
-		Config.TestDSN.Schema = "unknown"
-	}
 	Config.ReportCSS = *reportCSS
 	Config.ReportJavascript = *reportJavascript
 	Config.ReportTitle = *reportTitle
@@ -865,29 +843,9 @@ var ReportTypes = []ReportType{
 		Example:     `echo "select * from film" | soar -report-type ast`,
 	},
 	{
-		Name:        "ast-json",
-		Description: "以 JSON 格式输出 SQL 的抽象语法树，主要用于测试",
-		Example:     `echo "select * from film" | soar -report-type ast-json`,
-	},
-	{
 		Name:        "tiast",
 		Description: "输出 SQL 的 TiDB抽象语法树，主要用于测试",
 		Example:     `echo "select * from film" | soar -report-type tiast`,
-	},
-	{
-		Name:        "tiast-json",
-		Description: "以 JSON 格式输出 SQL 的 TiDB抽象语法树，主要用于测试",
-		Example:     `echo "select * from film" | soar -report-type tiast-json`,
-	},
-	{
-		Name:        "tables",
-		Description: "以 JSON 格式输出 SQL 使用的库表名",
-		Example:     `echo "select * from film" | soar -report-type tables`,
-	},
-	{
-		Name:        "query-type",
-		Description: "SQL 语句的请求类型",
-		Example:     `echo "select * from film" | soar -report-type query-type`,
 	},
 	{
 		Name:        "fingerprint",

@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/XiaoMi/soar/common"
+	"github.com/smallnest/soar/common"
 
 	// for database/sql
 	_ "github.com/go-sql-driver/mysql"
@@ -90,7 +90,7 @@ func (db *Connector) Query(sql string, params ...interface{}) (QueryResult, erro
 	}
 
 	common.Log.Debug("Execute SQL with DSN(%s/%s) : %s", db.Addr, db.Database, fmt.Sprintf(sql, params...))
-	_, err = db.Conn.Exec("USE `" + db.Database + "`")
+	_, err = db.Conn.Exec("USE " + db.Database)
 	if err != nil {
 		common.Log.Error(err.Error())
 		return res, err
@@ -252,14 +252,9 @@ func (db *Connector) IsView(tbName string) bool {
 // RemoveSQLComments 去除SQL中的注释
 func RemoveSQLComments(sql string) string {
 	buf := []byte(sql)
-	// ("(""|[^"])*") 双引号中的内容
-	// ('(''|[^'])*') 单引号中的内容
-	// (--[^\n\r]*) 双减号注释
-	// (#.*) 井号注释
-	// (/\*([^*]|[\r\n]|(\*+([^*/]|[\r\n])))*\*+/) 多行注释
-	commentRegex := regexp.MustCompile(`("(""|[^"])*")|('(''|[^'])*')|(--[^\n\r]*)|(#.*)|(/\*([^*]|[\r\n]|(\*+([^*/]|[\r\n])))*\*+/)`)
+	cmtReg := regexp.MustCompile(`("(""|[^"])*")|('(''|[^'])*')|(--[^\n\r]*)|(#.*)|(/\*([^*]|[\r\n]|(\*+([^*/]|[\r\n])))*\*+/)`)
 
-	res := commentRegex.ReplaceAllFunc(buf, func(s []byte) []byte {
+	res := cmtReg.ReplaceAllFunc(buf, func(s []byte) []byte {
 		if (s[0] == '"' && s[len(s)-1] == '"') ||
 			(s[0] == '\'' && s[len(s)-1] == '\'') ||
 			(string(s[:3]) == "/*!") {
@@ -322,24 +317,6 @@ func NullString(buf []byte) string {
 		return "NULL"
 	}
 	return string(buf)
-}
-
-// NullFloat null able float
-func NullFloat(buf []byte) float64 {
-	if buf == nil {
-		return 0
-	}
-	f, _ := strconv.ParseFloat(string(buf), 64)
-	return f
-}
-
-// NullInt null able int
-func NullInt(buf []byte) int64 {
-	if buf == nil {
-		return 0
-	}
-	i, _ := strconv.ParseInt(string(buf), 10, 64)
-	return i
 }
 
 // quoteEscape sql_mode=no_backslash_escapes

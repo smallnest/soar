@@ -195,19 +195,15 @@ func init() {
 		"alter table inventory add index `idx_store_film` (`store_id`,`film_id`);",
 		"alter table inventory add index `idx_store_film` (`store_id`,`film_id`),add index `idx_store_film` (`store_id`,`film_id`),add index `idx_store_film` (`store_id`,`film_id`);",
 
-		// https://github.com/XiaoMi/soar/issues/47
+		// https://github.com/smallnest/soar/issues/47
 		`SELECT	DATE_FORMAT(t.last_update, '%Y-%m-%d'),	COUNT(DISTINCT (t.city))	FROM city t WHERE t.last_update > '2018-10-22 00:00:00'	AND t.city LIKE '%Chrome%'	AND t.city = 'eip' GROUP BY DATE_FORMAT(t.last_update, '%Y-%m-%d') ORDER BY DATE_FORMAT(t.last_update, '%Y-%m-%d');`,
-		// https://github.com/XiaoMi/soar/issues/17
+		// https://github.com/smallnest/soar/issues/17
 		"create table hello.t (id int unsigned);",
 
-		// https://github.com/XiaoMi/soar/issues/146
+		// https://github.com/smallnest/soar/issues/146
 		"select * from tb where data >= '';",
 
-		// https://github.com/XiaoMi/soar/issues/163
+		// https://github.com/smallnest/soar/issues/163
 		"alter table tb alter column id drop default;",
-
-		// explain extra info "Select tables optimized away"
-		"select maxId, minId from (select max(film_id) maxId, min(film_id) minId from film where last_update > '2016-03-27 02:01:01') as d;",
-		"select maxId, minId from (select max(film_id) maxId, min(film_id) minId from film) as d;",
 	}
 }

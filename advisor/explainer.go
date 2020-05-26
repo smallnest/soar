@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/XiaoMi/soar/common"
-	"github.com/XiaoMi/soar/database"
+	"github.com/smallnest/soar/common"
+	"github.com/smallnest/soar/database"
 )
 
 var explainRuleID int
@@ -222,7 +222,7 @@ func DigestExplainText(text string) {
 			return
 		}
 		expSuggest := ExplainAdvisor(explainInfo)
-		_, output := FormatSuggest("", "", common.Config.ReportType, expSuggest)
+		_, output := FormatSuggest("", common.Config.ReportType, expSuggest)
 		if common.Config.ReportType == "html" {
 			fmt.Println(common.MarkdownHTMLHeader())
 			fmt.Println(common.Markdown2HTML(output))

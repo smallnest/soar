@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/XiaoMi/soar/common"
+	"github.com/smallnest/soar/common"
 	"vitess.io/vitess/go/vt/sqlparser"
 )
 
@@ -297,11 +297,8 @@ func FindEQColsInWhere(node sqlparser.SQLNode) []*common.Column {
 				}
 
 			default:
-				switch node.Left.(type) {
-				case *sqlparser.ColName:
-					if _, ok := eqOperators[node.Operator]; ok {
-						newCols = FindColumn(node)
-					}
+				if _, ok := eqOperators[node.Operator]; ok {
+					newCols = FindColumn(node)
 				}
 			}
 
