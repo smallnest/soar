@@ -26,6 +26,10 @@ import (
 	"github.com/percona/go-mysql/query"
 )
 
+func Fingerprint(sql string) string {
+	return query.Fingerprint(sql)
+}
+
 // Pretty 格式化输出SQL
 func Pretty(sql string, method string) (output string) {
 	common.Log.Debug("Pretty, Query: %s, method: %s", sql, method)
